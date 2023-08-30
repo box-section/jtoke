@@ -1,0 +1,4 @@
+# note that paths are relative to the repo root, not the pwd
+name: jtoke
+build:
+  cmake: zephyr
