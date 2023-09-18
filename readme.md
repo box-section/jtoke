@@ -12,8 +12,8 @@ jtoke_item_t item;
 jtoke_type_t type;
 const char jobj[] = "{ \"foo\": 42, \"bar\": true}";
 
-// Always wipe the context before parsing a new string
-memset(&ctx, 0, sizeof(ctx));
+// Always init the context before parsing a new string
+ctx = JTOKE_CONTEXT_INIT;
 
 // Loop through all fields until end of string
 while ((type = jtoke_parse(&ctx, jobj, &item)) > 0) {

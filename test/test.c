@@ -124,22 +124,24 @@ void runtest(const test_case_t* test_case, unsigned test_case_count, const char*
 	jtoke_item_t item;
 	jtoke_type_t type;
 
-	// Always wipe the context before parsing a new string
-	memset(&ctx, 0, sizeof(ctx));
+	// Always init the context before parsing a new string
+	ctx = JTOKE_CONTEXT_INIT;
 
 	// Loop through the test fields. They should be reported in order.
 	for (unsigned i=0; i<test_case_count; i++) {
 		type = jtoke_parse(&ctx, json, &item);
+
+		if (type != test_case[i].type) {
+			printf("expected type %d (%s), but found %d (%s)\n", 
+				test_case[i].type, lookup_type(test_case[i].type), type, lookup_type(type));
+			assert(false);
+		}
+
 		if (type > 0) {
 			DBG_PRINT("name '%.*s' has value '%.*s' (len=%u, type=%s)\n",
 				item.name_len, item.name, item.val_len, item.val, item.val_len, lookup_type(type));
 
-			if (type != test_case[i].type) {
-				printf("expected type %u (%s), but found %u (%s)\n", 
-					type, lookup_type(type), test_case[i].type, lookup_type(test_case[i].type));
-				assert(false);
-			}
-			else if (item.val_len != strlen(test_case[i].val)) {
+			if (item.val_len != strlen(test_case[i].val)) {
 				printf("expected len %u, but found %u\n", strlen(test_case[i].val), item.val_len);
 				assert(false);
 			}
@@ -148,9 +150,6 @@ void runtest(const test_case_t* test_case, unsigned test_case_count, const char*
 					test_case[i].val, item.val_len, item.val);
 				assert(false);
 			}
-		}
-		else {
-			assert(false && "invalid");
 		}
 	}
 

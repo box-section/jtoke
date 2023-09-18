@@ -42,6 +42,10 @@ typedef struct {
 	const char* pos;
 } jtoke_context_t;
 
+// Initialize all jtoke_context_t to this prior to processing a new string.
+// Assume this is opaque for forward-compatibility.
+#define JTOKE_CONTEXT_INIT	(jtoke_context_t){ 0 }
+
 // Result struct, arranged to avoid need to pack
 typedef struct {
 	const char* name;			// pointer to field name, after quote. *not null-terminated*
@@ -60,8 +64,8 @@ typedef struct {
  * must end with null. This double standard is a neccessary evil.
  *
  * @param ctx    Opaque context structure to track progress through the item.
- *               Ensure the context has been zeroed (eg. memset to 0) before 
- *               processing a new string.
+ *               Set the context struct to JTOKE_CONTEXT_INIT before processing
+ *               a new string.
  * @param json   JSON string to parse
  * @param item   Resulting output
  *
