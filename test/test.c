@@ -25,6 +25,50 @@ PERFORMANCE OF THIS SOFTWARE.
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <stdbool.h>
+
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(arr)	(sizeof(arr)/sizeof(arr[0]))
+#endif
+
+#ifdef JTOKE_TEST_DEBUG
+#define DBG_PRINT	printf
+#else
+#define DBG_PRINT(...)
+#endif
+
+typedef struct
+{
+	const char* val;
+	jtoke_type_t type;
+} test_case_t;
+
+static const test_case_t t0[] = {
+	{ .type = JTOKE_INT, .val = "42" },
+	{ .type = JTOKE_INT, .val = "424242424242" },
+
+	{ .type = JTOKE_REAL, .val = "3.14" },
+	{ .type = JTOKE_REAL, .val = "-3.14" },
+	{ .type = JTOKE_REAL, .val = "1.0E+2" },
+	{ .type = JTOKE_REAL, .val = "-1.0E+2" },
+	{ .type = JTOKE_REAL, .val = "9.876E-05" },
+	{ .type = JTOKE_REAL, .val = "-9.876E-05" },
+
+	{ .type = JTOKE_TRUE,  .val = "true" },
+	{ .type = JTOKE_FALSE, .val = "false" },
+	{ .type = JTOKE_NULL,  .val = "null" },
+
+	{ .type = JTOKE_STRING, .val = "test" },		// basic string
+	{ .type = JTOKE_STRING, .val = "test str" },	// basic string
+	{ .type = JTOKE_STRING, .val = "" },			// basic string
+	{ .type = JTOKE_STRING, .val = " " },			// basic string
+	{ .type = JTOKE_STRING, .val = "123" },			// string that looks like an int
+	{ .type = JTOKE_STRING, .val = "1.23" },		// string that looks like a float
+	{ .type = JTOKE_STRING, .val = "true" },		// string that looks like a bool
+	{ .type = JTOKE_STRING, .val = "extra \\\"escapes\\\"" },
+	{ .type = JTOKE_STRING, .val = "multi\nline\nstring" },
+	{ .type = JTOKE_STRING, .val = "string\twith\ttabs" },
+};
 
 const char* lookup_type(jtoke_type_t type)
 {
@@ -44,18 +88,37 @@ const char* lookup_type(jtoke_type_t type)
 	return "unknown";
 }
 
-int main(void)
+const char* build_json_from_test(const test_case_t* test_case, unsigned test_case_count)
 {
-	static const char jobj[] = "{ "
-		"\"name_str\"	 : \"test str\", "
-		"\"name_int\":42, "
-		"\"name_real\" : 3.14 , "
-		"\"name_real0\" : -3.14 , \n"
-		"\"name_real1\" : 1.0E+2 ,"
-		"\"name_real2\" : 9.876E-05,"
-		"\"name_null\" : null , "
-		"\"name_true\":  true "
-		" }";
+	// Big scratch array to hold the test string
+	static char json[1024];
+	// Temporary buffer for names
+	char nameval[256];
+
+	memset(json, 0, sizeof(json));
+
+	strncat(json, "{", sizeof(json));
+	for (unsigned i=0; i<test_case_count; i++) {
+		snprintf(nameval, sizeof(nameval), 
+			(JTOKE_STRING == test_case[i].type) ? 
+				// string types are quoted
+				"\"test_%u\": \"%s\", " :
+				// no quotes for non-string types
+				"\"test_%u\": %s, ",
+			i, test_case[i].val);
+		strncat(json, nameval, sizeof(json));
+	}
+	strncat(json, "}", sizeof(json));
+
+	return json;
+}
+
+void runtest(const test_case_t* test_case, unsigned test_case_count, const char* json)
+{
+	if (NULL == json) {
+		json = build_json_from_test(test_case, test_case_count);
+	}
+	DBG_PRINT("test json: %s\n", json);
 
 	jtoke_context_t ctx;
 	jtoke_item_t item;
@@ -64,21 +127,40 @@ int main(void)
 	// Always wipe the context before parsing a new string
 	memset(&ctx, 0, sizeof(ctx));
 
-	// Loop through all fields
-	while ((type = jtoke_parse(&ctx, jobj, &item)) > 0) {
-		printf("name '%.*s' has value '%.*s' (type=%s)",
-			item.name_len, item.name, item.val_len, item.val, lookup_type(type));
+	// Loop through the test fields. They should be reported in order.
+	for (unsigned i=0; i<test_case_count; i++) {
+		type = jtoke_parse(&ctx, json, &item);
+		if (type > 0) {
+			DBG_PRINT("name '%.*s' has value '%.*s' (len=%u, type=%s)\n",
+				item.name_len, item.name, item.val_len, item.val, item.val_len, lookup_type(type));
 
-		if (JTOKE_INT == type) {
-			// Use strtol to convert integers from strings
-			int val = strtol(item.val, NULL, 0);
-			printf(" val=%d", val);
+			if (type != test_case[i].type) {
+				printf("expected type %u (%s), but found %u (%s)\n", 
+					type, lookup_type(type), test_case[i].type, lookup_type(test_case[i].type));
+				assert(false);
+			}
+			else if (item.val_len != strlen(test_case[i].val)) {
+				printf("expected len %u, but found %u\n", strlen(test_case[i].val), item.val_len);
+				assert(false);
+			}
+			else if (memcmp(test_case[i].val, item.val, item.val_len)) {
+				printf("unexpected value. expected %s, but found %.*s", 
+					test_case[i].val, item.val_len, item.val);
+				assert(false);
+			}
 		}
-		else if (JTOKE_REAL == type) {
-			// Use strtof to convert integers from strings
-			float val = strtof(item.val, NULL);
-			printf(" val=%f", val);
+		else {
+			assert(false && "invalid");
 		}
-		printf("\n");
 	}
+
+	// Check that nothing remains
+	assert(jtoke_parse(&ctx, json, &item) < 0);
+}
+
+int main(void)
+{
+	runtest(t0, ARRAY_SIZE(t0), NULL);
+	printf("tests passed.\n");
+	return 0;
 }
