@@ -57,6 +57,28 @@ static char advance_until(const char* charset, const char** c)
 	return 0;
 }
 
+static char advance_until_end_quote(const char** c)
+{
+	char ch = **c;
+	int skip = 0;
+	while (ch) {
+		if (skip) {
+			// process escaped val
+			skip = 0;
+		}
+		else if (ch == '\\') {
+			// found escape start
+			skip = 1;
+		}
+		else if (ch == '"') {
+			return ch;
+		}
+		(*c)++;
+		ch = **c;
+	}
+	return 0;
+}
+
 static char advance_past(const char* charset, const char** c)
 {
 	char ch = **c;
@@ -123,7 +145,7 @@ jtoke_type_t jtoke_parse(jtoke_context_t* ctx, const char* json, jtoke_item_t* i
 		ctx->pos++;
 		item->val = ctx->pos;
 		DBG_PRINT("advancing until value end (string)\n");
-		ch = advance_until("\"", &ctx->pos);
+		ch = advance_until_end_quote(&ctx->pos);
 		RETURN_IF_NULL(ch);
 		item->val_len = ctx->pos - item->val;
 	}
