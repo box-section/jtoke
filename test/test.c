@@ -60,6 +60,7 @@ static const test_case_t t0[] = {
 
 	{ .type = JTOKE_STRING, .val = "test" },		// basic string
 	{ .type = JTOKE_STRING, .val = "test str" },	// basic string
+	{ .type = JTOKE_STRING, .val = ", my test, str" }, // basic string
 	{ .type = JTOKE_STRING, .val = "" },			// basic string
 	{ .type = JTOKE_STRING, .val = " " },			// basic string
 	{ .type = JTOKE_STRING, .val = "123" },			// string that looks like an int
@@ -69,6 +70,8 @@ static const test_case_t t0[] = {
 	{ .type = JTOKE_STRING, .val = "multi\nline\nstring" },
 	{ .type = JTOKE_STRING, .val = "string\twith\ttabs" },
 };
+
+static const char* j1 = "{ foo : \"bar\" }";
 
 const char* lookup_type(jtoke_type_t type)
 {
@@ -154,12 +157,18 @@ void runtest(const test_case_t* test_case, unsigned test_case_count, const char*
 	}
 
 	// Check that nothing remains
-	assert(jtoke_parse(&ctx, json, &item) < 0);
+	type = jtoke_parse(&ctx, json, &item);
+	if (type > 0) {
+		printf("expected empty json but found type %d (%s)\n", type, lookup_type(type));
+		assert(false);
+	}
 }
 
 int main(void)
 {
 	runtest(t0, ARRAY_SIZE(t0), NULL);
+	runtest(NULL, 0, j1);
+
 	printf("tests passed.\n");
 	return 0;
 }

@@ -32,6 +32,8 @@ PERFORMANCE OF THIS SOFTWARE.
 #define JSON_TRUE	"true"
 #define JSON_FALSE	"false"
 
+#define JSON_WHITESPACE	" \t\r\n"
+
 static char in_charset(const char* charset, char c)
 {
 	char ch = *charset;
@@ -119,11 +121,17 @@ jtoke_type_t jtoke_parse(jtoke_context_t* ctx, const char* json, jtoke_item_t* i
 
 	if (0 == ctx->pos) {
 		ctx->pos = json;
+		ch = advance_past(JSON_WHITESPACE "{", &ctx->pos);
+		RETURN_IF_NULL(ch);
 	}
 
 	DBG_PRINT("checking for open quote\n");
-	ch = advance_until("\"", &ctx->pos);
+	ch = advance_past(JSON_WHITESPACE, &ctx->pos);
+	DBG_PRINT("first char: %c\n", ch);
 	RETURN_IF_NULL(ch);
+	if (ch != '\"') {
+		return JTOKE_ERROR;
+	}
 
 	ctx->pos++;
 	item->name = ctx->pos;
@@ -137,7 +145,7 @@ jtoke_type_t jtoke_parse(jtoke_context_t* ctx, const char* json, jtoke_item_t* i
 	DBG_PRINT("name_len is %u, next char is '%c'\n", item->name_len, *ctx->pos);
 
 	DBG_PRINT("advancing past colon\n");
-	ch = advance_past(" \t\r\n:", &ctx->pos);
+	ch = advance_past(JSON_WHITESPACE ":", &ctx->pos);
 	RETURN_IF_NULL(ch);
 
 	if (ch == '"') {
@@ -148,6 +156,12 @@ jtoke_type_t jtoke_parse(jtoke_context_t* ctx, const char* json, jtoke_item_t* i
 		ch = advance_until_end_quote(&ctx->pos);
 		RETURN_IF_NULL(ch);
 		item->val_len = ctx->pos - item->val;
+		// Move past the quote character itself
+		// Note we cannot use advance_past() here because it may chew up 
+		// the start of the next quote
+		ctx->pos++;
+		ch = advance_past(JSON_WHITESPACE ",", &ctx->pos);
+		DBG_PRINT("end of string char: %c (%c)\n", ch, *ctx->pos);
 	}
 	else if (ch == '{') {
 		// TODO: handle sub-object
@@ -162,7 +176,7 @@ jtoke_type_t jtoke_parse(jtoke_context_t* ctx, const char* json, jtoke_item_t* i
 	else {
 		item->val = ctx->pos;
 		DBG_PRINT("advancing until value end\n");
-		ch = advance_until(" \t\r\n,}", &ctx->pos);
+		ch = advance_until(JSON_WHITESPACE ",}", &ctx->pos);
 		RETURN_IF_NULL(ch);
 		item->val_len = ctx->pos - item->val;
 
@@ -186,9 +200,11 @@ jtoke_type_t jtoke_parse(jtoke_context_t* ctx, const char* json, jtoke_item_t* i
 			DBG_PRINT("unknown type\n");
 			return JTOKE_ERROR;
 		}
+
+		// Move to the char following the value
+		ctx->pos++;
 	}
 
-	ctx->pos++;
 	DBG_PRINT("item complete.\n");
 	return type;
 }
