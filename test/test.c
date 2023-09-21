@@ -100,7 +100,7 @@ const char* build_json_from_test(const test_case_t* test_case, unsigned test_cas
 
 	memset(json, 0, sizeof(json));
 
-	strncat(json, "{", sizeof(json));
+	strncat(json, "{", 1);
 	for (unsigned i=0; i<test_case_count; i++) {
 		snprintf(nameval, sizeof(nameval), 
 			(JTOKE_STRING == test_case[i].type) ? 
@@ -109,9 +109,9 @@ const char* build_json_from_test(const test_case_t* test_case, unsigned test_cas
 				// no quotes for non-string types
 				"\"test_%u\": %s, ",
 			i, test_case[i].val);
-		strncat(json, nameval, sizeof(json));
+		strncat(json, nameval, sizeof(json) - strlen(json) - 1);
 	}
-	strncat(json, "}", sizeof(json));
+	strncat(json, "}", 1);
 
 	return json;
 }
@@ -145,7 +145,7 @@ void runtest(const test_case_t* test_case, unsigned test_case_count, const char*
 				item.name_len, item.name, item.val_len, item.val, item.val_len, lookup_type(type));
 
 			if (item.val_len != strlen(test_case[i].val)) {
-				printf("expected len %u, but found %u\n", strlen(test_case[i].val), item.val_len);
+				printf("expected len %lu, but found %u\n", strlen(test_case[i].val), item.val_len);
 				assert(false);
 			}
 			else if (memcmp(test_case[i].val, item.val, item.val_len)) {
