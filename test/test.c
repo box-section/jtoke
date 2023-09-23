@@ -36,6 +36,7 @@ PERFORMANCE OF THIS SOFTWARE.
 
 typedef struct
 {
+	const char* name;
 	const char* val;
 	jtoke_type_t type;
 } test_case_field_t;
@@ -46,12 +47,12 @@ typedef struct
 	const char* json;
 	// List of fields for the test case
 	// Terminate with an entry where 'type == TEST_TERM'
-	const test_case_field_t* fields;
+	test_case_field_t* fields;
 } test_case_t;
 
 #define TEST_TERM	4242
 
-static const test_case_t cases[] = {
+static test_case_t cases[] = {
 	{
 		.fields = (test_case_field_t []) {
 			{ .type = JTOKE_INT, .val = "42" },
@@ -104,7 +105,7 @@ static const test_case_t cases[] = {
 	{ 
 		.json = "{ \"foo\" : \"bar\"",
 		.fields = (test_case_field_t []) {
-			{ .type = JTOKE_STRING, .val = "bar" },
+			{ .type = JTOKE_STRING, .name = "foo", .val = "bar" },
 			{ .type = TEST_TERM }, // end marker
 		},
 	},
@@ -112,7 +113,7 @@ static const test_case_t cases[] = {
 	{ 
 		.json = "{ \"foo\" : 123, \"",
 		.fields = (test_case_field_t []) {
-			{ .type = JTOKE_INT, .val = "123" },
+			{ .type = JTOKE_INT, .name = "foo", .val = "123" },
 			{ .type = TEST_TERM }, // end marker
 		},
 	},
@@ -120,7 +121,17 @@ static const test_case_t cases[] = {
 	{ 
 		.json = "{ \"foo\" : 123, \"bar\" : ",
 		.fields = (test_case_field_t []) {
-			{ .type = JTOKE_INT, .val = "123" },
+			{ .type = JTOKE_INT, .name = "foo", .val = "123" },
+			{ .type = TEST_TERM }, // end marker
+		},
+	},
+
+	// Special characters in strings
+	{ 
+		.fields = (test_case_field_t []) {
+			{ .type = JTOKE_STRING, .name = "foo bar", .val = "foo bar" },
+			{ .type = JTOKE_STRING, .name = "foo\tbar", .val = "foo\tbar" },
+			{ .type = JTOKE_STRING, .name = "foo\\\"", .val = "foo\\\"" },
 			{ .type = TEST_TERM }, // end marker
 		},
 	},
@@ -144,12 +155,10 @@ const char* lookup_type(jtoke_type_t type)
 	return "unknown";
 }
 
-const char* build_json_from_test(const test_case_field_t* fields)
+const char* build_json_from_test(test_case_field_t* fields)
 {
 	// Big scratch array to hold the test string
 	static char json[1024];
-	// Temporary buffer for names
-	char nameval[256];
 
 	if (NULL == fields) {
 		return NULL;
@@ -159,23 +168,29 @@ const char* build_json_from_test(const test_case_field_t* fields)
 
 	strncat(json, "{", 1);
 	for (unsigned i=0; fields[i].type != TEST_TERM; i++) {
-		snprintf(nameval, sizeof(nameval), 
+		if (!fields[i].name) {
+			// Allocate a buffer for name
+			char* name = malloc(32);
+			snprintf(name, 32, "test_%u", i);
+			fields[i].name = name;
+		}
+
+		snprintf(&json[strlen(json)], sizeof(json) - strlen(json) - 1,
 			(JTOKE_STRING == fields[i].type) ? 
 				// string types are quoted
-				"\"test_%u\": \"%s\", " :
+				"\"%s\": \"%s\", " :
 				// no quotes for non-string types
-				"\"test_%u\": %s, ",
-			i, fields[i].val);
-		strncat(json, nameval, sizeof(json) - strlen(json) - 1);
+				"\"%s\": %s, ",
+			fields[i].name, fields[i].val);
 	}
 	strncat(json, "}", 1);
 
 	return json;
 }
 
-void runtest(const test_case_t* test_case)
+void runtest(test_case_t* test_case)
 {
-	const test_case_field_t* fields = test_case->fields;
+	test_case_field_t* fields = test_case->fields;
 	const char* json = test_case->json;
 
 	// Build the json if not already set
@@ -196,6 +211,8 @@ void runtest(const test_case_t* test_case)
 		for (unsigned i=0; fields[i].type != TEST_TERM; i++) {
 			type = jtoke_parse(&ctx, json, &item);
 
+			DBG_PRINT("found type %d (%s)\n", type, lookup_type(type));
+
 			if (type != fields[i].type) {
 				printf("expected type %d (%s), but found %d (%s)\n", 
 					fields[i].type, lookup_type(fields[i].type), type, lookup_type(type));
@@ -206,8 +223,19 @@ void runtest(const test_case_t* test_case)
 				DBG_PRINT("name '%.*s' has value '%.*s' (len=%u, type=%s)\n",
 					item.name_len, item.name, item.val_len, item.val, item.val_len, lookup_type(type));
 
+				if (item.name_len != strlen(fields[i].name)) {
+					printf("expected name len %lu (%s), but found %u\n", 
+						strlen(fields[i].name), fields[i].name, item.name_len);
+					assert(false);
+				}
+				else if (memcmp(fields[i].name, item.name, item.name_len)) {
+					printf("unexpected value. expected %s, but found %.*s\n", 
+						fields[i].name, item.name_len, item.name);
+					assert(false);
+				}
+
 				if (item.val_len != strlen(fields[i].val)) {
-					printf("expected len %lu, but found %u\n", strlen(fields[i].val), item.val_len);
+					printf("expected val len %lu, but found %u\n", strlen(fields[i].val), item.val_len);
 					assert(false);
 				}
 				else if (memcmp(fields[i].val, item.val, item.val_len)) {
@@ -217,6 +245,8 @@ void runtest(const test_case_t* test_case)
 				}
 			}
 		}
+
+		DBG_PRINT("end fields.");
 	}
 
 	// Check that nothing remains

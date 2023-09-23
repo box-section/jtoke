@@ -171,7 +171,7 @@ jtoke_type_t jtoke_parse(jtoke_context_t* ctx, const char* json, jtoke_item_t* i
 	item->name = ctx->pos;
 
 	DBG_PRINT("checking for close quote\n");
-	ch = advance_until("\"", &ctx->pos);
+	ch = advance_until_end_quote(&ctx->pos);
 	RETURN_IF_NULL(ch);
 
 	item->name_len = ctx->pos - item->name;
