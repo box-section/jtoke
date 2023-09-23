@@ -14,9 +14,6 @@ OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 */
 
-// TODO: this is more of an example than a test.
-//       add proper self-checks.
-
 // To run this code, use the runtests.sh script and observe the output.
 
 #include "jtoke.h"
@@ -45,49 +42,55 @@ typedef struct
 
 typedef struct 
 {
-	// List of fields for the test case
-	const test_case_field_t* fields;
 	// Fields represented as a json string
 	const char* json;
+	// List of fields for the test case
+	const test_case_field_t* fields;
 } test_case_t;
 
-static const test_case_field_t t0[] = {
-	{ .type = JTOKE_INT, .val = "42" },
-	{ .type = JTOKE_INT, .val = "424242424242" },
+static const test_case_t cases[] = {
+	{
+		.fields = (test_case_field_t []) {
+			{ .type = JTOKE_INT, .val = "42" },
+			{ .type = JTOKE_INT, .val = "424242424242" },
 
-	{ .type = JTOKE_REAL, .val = "3.14" },
-	{ .type = JTOKE_REAL, .val = "-3.14" },
-	{ .type = JTOKE_REAL, .val = "1.0E+2" },
-	{ .type = JTOKE_REAL, .val = "-1.0E+2" },
-	{ .type = JTOKE_REAL, .val = "9.876E-05" },
-	{ .type = JTOKE_REAL, .val = "-9.876E-05" },
+			{ .type = JTOKE_REAL, .val = "3.14" },
+			{ .type = JTOKE_REAL, .val = "-3.14" },
+			{ .type = JTOKE_REAL, .val = "1.0E+2" },
+			{ .type = JTOKE_REAL, .val = "-1.0E+2" },
+			{ .type = JTOKE_REAL, .val = "9.876E-05" },
+			{ .type = JTOKE_REAL, .val = "-9.876E-05" },
 
-	{ .type = JTOKE_TRUE,  .val = "true" },
-	{ .type = JTOKE_FALSE, .val = "false" },
-	{ .type = JTOKE_NULL,  .val = "null" },
+			{ .type = JTOKE_TRUE,  .val = "true" },
+			{ .type = JTOKE_FALSE, .val = "false" },
+			{ .type = JTOKE_NULL,  .val = "null" },
 
-	{ .type = JTOKE_STRING, .val = "test" },		// basic string
-	{ .type = JTOKE_STRING, .val = "test str" },	// basic string
-	{ .type = JTOKE_STRING, .val = ", my test, str" }, // basic string
-	{ .type = JTOKE_STRING, .val = "" },			// basic string
-	{ .type = JTOKE_STRING, .val = " " },			// basic string
-	{ .type = JTOKE_STRING, .val = "123" },			// string that looks like an int
-	{ .type = JTOKE_STRING, .val = "1.23" },		// string that looks like a float
-	{ .type = JTOKE_STRING, .val = "true" },		// string that looks like a bool
-	{ .type = JTOKE_STRING, .val = "extra \\\"escapes\\\"" },
-	{ .type = JTOKE_STRING, .val = "multi\nline\nstring" },
-	{ .type = JTOKE_STRING, .val = "string\twith\ttabs" },
+			{ .type = JTOKE_STRING, .val = "test" },		// basic string
+			{ .type = JTOKE_STRING, .val = "test str" },	// basic string
+			{ .type = JTOKE_STRING, .val = ", my test, str" }, // basic string
+			{ .type = JTOKE_STRING, .val = "" },			// basic string
+			{ .type = JTOKE_STRING, .val = " " },			// basic string
+			{ .type = JTOKE_STRING, .val = "123" },			// string that looks like an int
+			{ .type = JTOKE_STRING, .val = "1.23" },		// string that looks like a float
+			{ .type = JTOKE_STRING, .val = "true" },		// string that looks like a bool
+			{ .type = JTOKE_STRING, .val = "extra \\\"escapes\\\"" },
+			{ .type = JTOKE_STRING, .val = "multi\nline\nstring" },
+			{ .type = JTOKE_STRING, .val = "string\twith\ttabs" },
+			{ .type = JTOKE_ERROR }, // end marker
+		},
+	},
+
+	// Negative cases dealing with types. These should all result in no fields.
+	{ .json = "{ foo : \"bar\" }" },
+	{ .json = "{ \"foo : bar\" }" },
+	{ .json = "{ foo : bar }" },
+	{ .json = "{ \"foo\" : \"bar }" },
+	{ .json = "{ \"foo : \"bar\" }" },
+	{ .json = "{ \"foo\" : tru3 }" },
+	{ .json = "{ \"foo\" : fals3 }" },
+	{ .json = "{ \"foo\" : 3f }" },
+	{ .json = "{ \"foo\" : 3.f }" },
 };
-
-static const char* f0 = "{ foo : \"bar\" }";
-static const char* f1 = "{ \"foo : bar\" }";
-static const char* f2 = "{ foo : bar }";
-static const char* f3 = "{ \"foo\" : \"bar }";
-static const char* f4 = "{ \"foo : \"bar\" }";
-static const char* f5 = "{ \"foo\" : tru3 }";
-static const char* f6 = "{ \"foo\" : fals3 }";
-static const char* f7 = "{ \"foo\" : 3f }";
-static const char* f8 = "{ \"foo\" : 3.f }";
 
 const char* lookup_type(jtoke_type_t type)
 {
@@ -107,24 +110,28 @@ const char* lookup_type(jtoke_type_t type)
 	return "unknown";
 }
 
-const char* build_json_from_test(const test_case_field_t* test_case, unsigned test_case_count)
+const char* build_json_from_test(const test_case_field_t* fields)
 {
 	// Big scratch array to hold the test string
 	static char json[1024];
 	// Temporary buffer for names
 	char nameval[256];
 
+	if (NULL == fields) {
+		return NULL;
+	}
+
 	memset(json, 0, sizeof(json));
 
 	strncat(json, "{", 1);
-	for (unsigned i=0; i<test_case_count; i++) {
+	for (unsigned i=0; fields[i].type > 0; i++) {
 		snprintf(nameval, sizeof(nameval), 
-			(JTOKE_STRING == test_case[i].type) ? 
+			(JTOKE_STRING == fields[i].type) ? 
 				// string types are quoted
 				"\"test_%u\": \"%s\", " :
 				// no quotes for non-string types
 				"\"test_%u\": %s, ",
-			i, test_case[i].val);
+			i, fields[i].val);
 		strncat(json, nameval, sizeof(json) - strlen(json) - 1);
 	}
 	strncat(json, "}", 1);
@@ -132,12 +139,15 @@ const char* build_json_from_test(const test_case_field_t* test_case, unsigned te
 	return json;
 }
 
-void runtest(const test_case_field_t* test_case, unsigned test_case_count, const char* json)
+void runtest(const test_case_t* test_case)
 {
+	const test_case_field_t* fields = test_case->fields;
+
+	const char* json = test_case->json;
 	if (NULL == json) {
-		json = build_json_from_test(test_case, test_case_count);
+		json = build_json_from_test(fields);
 	}
-	DBG_PRINT("test json: %s\n", json);
+	DBG_PRINT("testing json: %s\n", json);
 
 	jtoke_context_t ctx;
 	jtoke_item_t item;
@@ -146,28 +156,30 @@ void runtest(const test_case_field_t* test_case, unsigned test_case_count, const
 	// Always init the context before parsing a new string
 	ctx = JTOKE_CONTEXT_INIT;
 
-	// Loop through the test fields. They should be reported in order.
-	for (unsigned i=0; i<test_case_count; i++) {
-		type = jtoke_parse(&ctx, json, &item);
+	if (fields) {
+		// Loop through the test fields. They should be reported in order.
+		for (unsigned i=0; fields[i].type > 0; i++) {
+			type = jtoke_parse(&ctx, json, &item);
 
-		if (type != test_case[i].type) {
-			printf("expected type %d (%s), but found %d (%s)\n", 
-				test_case[i].type, lookup_type(test_case[i].type), type, lookup_type(type));
-			assert(false);
-		}
-
-		if (type > 0) {
-			DBG_PRINT("name '%.*s' has value '%.*s' (len=%u, type=%s)\n",
-				item.name_len, item.name, item.val_len, item.val, item.val_len, lookup_type(type));
-
-			if (item.val_len != strlen(test_case[i].val)) {
-				printf("expected len %lu, but found %u\n", strlen(test_case[i].val), item.val_len);
+			if (type != fields[i].type) {
+				printf("expected type %d (%s), but found %d (%s)\n", 
+					fields[i].type, lookup_type(fields[i].type), type, lookup_type(type));
 				assert(false);
 			}
-			else if (memcmp(test_case[i].val, item.val, item.val_len)) {
-				printf("unexpected value. expected %s, but found %.*s\n", 
-					test_case[i].val, item.val_len, item.val);
-				assert(false);
+
+			if (type > 0) {
+				DBG_PRINT("name '%.*s' has value '%.*s' (len=%u, type=%s)\n",
+					item.name_len, item.name, item.val_len, item.val, item.val_len, lookup_type(type));
+
+				if (item.val_len != strlen(fields[i].val)) {
+					printf("expected len %lu, but found %u\n", strlen(fields[i].val), item.val_len);
+					assert(false);
+				}
+				else if (memcmp(fields[i].val, item.val, item.val_len)) {
+					printf("unexpected value. expected %s, but found %.*s\n", 
+						fields[i].val, item.val_len, item.val);
+					assert(false);
+				}
 			}
 		}
 	}
@@ -182,18 +194,9 @@ void runtest(const test_case_field_t* test_case, unsigned test_case_count, const
 
 int main(void)
 {
-	runtest(t0, ARRAY_SIZE(t0), NULL);
-
-	// The following tests should have no fields returned
-	runtest(NULL, 0, f0);
-	runtest(NULL, 0, f1);
-	runtest(NULL, 0, f2);
-	runtest(NULL, 0, f3);
-	runtest(NULL, 0, f4);
-	runtest(NULL, 0, f5);
-	runtest(NULL, 0, f6);
-	runtest(NULL, 0, f7);
-	runtest(NULL, 0, f8);
+	for (int i=0; i<ARRAY_SIZE(cases); i++) {
+		runtest(&cases[i]);
+	}
 
 	printf("tests passed.\n");
 	return 0;
