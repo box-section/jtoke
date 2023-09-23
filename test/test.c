@@ -31,8 +31,8 @@ PERFORMANCE OF THIS SOFTWARE.
 #define ARRAY_SIZE(arr)	(sizeof(arr)/sizeof(arr[0]))
 #endif
 
-#ifdef JTOKE_TEST_DEBUG
-#define DBG_PRINT	printf
+#ifdef JTOKE_DEBUG
+#define DBG_PRINT(...)	do { printf("%s:%d (%s) - ", __FILE__, __LINE__, __func__); printf(__VA_ARGS__); } while (0);
 #else
 #define DBG_PRINT(...)
 #endif
@@ -41,9 +41,17 @@ typedef struct
 {
 	const char* val;
 	jtoke_type_t type;
+} test_case_field_t;
+
+typedef struct 
+{
+	// List of fields for the test case
+	const test_case_field_t* fields;
+	// Fields represented as a json string
+	const char* json;
 } test_case_t;
 
-static const test_case_t t0[] = {
+static const test_case_field_t t0[] = {
 	{ .type = JTOKE_INT, .val = "42" },
 	{ .type = JTOKE_INT, .val = "424242424242" },
 
@@ -71,7 +79,15 @@ static const test_case_t t0[] = {
 	{ .type = JTOKE_STRING, .val = "string\twith\ttabs" },
 };
 
-static const char* j1 = "{ foo : \"bar\" }";
+static const char* f0 = "{ foo : \"bar\" }";
+static const char* f1 = "{ \"foo : bar\" }";
+static const char* f2 = "{ foo : bar }";
+static const char* f3 = "{ \"foo\" : \"bar }";
+static const char* f4 = "{ \"foo : \"bar\" }";
+static const char* f5 = "{ \"foo\" : tru3 }";
+static const char* f6 = "{ \"foo\" : fals3 }";
+static const char* f7 = "{ \"foo\" : 3f }";
+static const char* f8 = "{ \"foo\" : 3.f }";
 
 const char* lookup_type(jtoke_type_t type)
 {
@@ -91,7 +107,7 @@ const char* lookup_type(jtoke_type_t type)
 	return "unknown";
 }
 
-const char* build_json_from_test(const test_case_t* test_case, unsigned test_case_count)
+const char* build_json_from_test(const test_case_field_t* test_case, unsigned test_case_count)
 {
 	// Big scratch array to hold the test string
 	static char json[1024];
@@ -116,7 +132,7 @@ const char* build_json_from_test(const test_case_t* test_case, unsigned test_cas
 	return json;
 }
 
-void runtest(const test_case_t* test_case, unsigned test_case_count, const char* json)
+void runtest(const test_case_field_t* test_case, unsigned test_case_count, const char* json)
 {
 	if (NULL == json) {
 		json = build_json_from_test(test_case, test_case_count);
@@ -149,7 +165,7 @@ void runtest(const test_case_t* test_case, unsigned test_case_count, const char*
 				assert(false);
 			}
 			else if (memcmp(test_case[i].val, item.val, item.val_len)) {
-				printf("unexpected value. expected %s, but found %.*s", 
+				printf("unexpected value. expected %s, but found %.*s\n", 
 					test_case[i].val, item.val_len, item.val);
 				assert(false);
 			}
@@ -167,7 +183,17 @@ void runtest(const test_case_t* test_case, unsigned test_case_count, const char*
 int main(void)
 {
 	runtest(t0, ARRAY_SIZE(t0), NULL);
-	runtest(NULL, 0, j1);
+
+	// The following tests should have no fields returned
+	runtest(NULL, 0, f0);
+	runtest(NULL, 0, f1);
+	runtest(NULL, 0, f2);
+	runtest(NULL, 0, f3);
+	runtest(NULL, 0, f4);
+	runtest(NULL, 0, f5);
+	runtest(NULL, 0, f6);
+	runtest(NULL, 0, f7);
+	runtest(NULL, 0, f8);
 
 	printf("tests passed.\n");
 	return 0;

@@ -21,12 +21,17 @@ PERFORMANCE OF THIS SOFTWARE.
 #include <stdio.h>
 
 #ifdef JTOKE_DEBUG
-#define DBG_PRINT	printf
+#define DBG_PRINT(...)	do { printf("%s:%d (%s) - ", __FILE__, __LINE__, __func__); printf(__VA_ARGS__); } while (0);
 #else
 #define DBG_PRINT(...)
 #endif
 
 #define RETURN_IF_NULL(ch)	if (0 == ch) { return JTOKE_ERROR; }
+
+#define ADV_AND_CHECK(ptr)	do { \
+	char ch = *ptr++; \
+	RETURN_IF_NULL(ch); \
+	} while(0);
 
 #define JSON_NULL	"null"
 #define JSON_TRUE	"true"
@@ -94,24 +99,51 @@ static char advance_past(const char* charset, const char** c)
 	return 0;
 }
 
-static int is_integer(const char* str, unsigned int str_len) 
+static jtoke_type_t detect_type(const char* str, unsigned int str_len)
 {
-	for (unsigned int i=0; i<str_len; i++) {
-		if (!in_charset("-0123456789", str[i])) {
-			return 0;
-		}
-	}
-	return 1;
-}
+	int i;
+	if (0 == str_len) return JTOKE_INVALID;
 
-static int is_real(const char* str, unsigned int str_len) 
-{
-	for (unsigned int i=0; i<str_len; i++) {
-		if (!in_charset("-0123456789.eE+", str[i])) {
-			return 0;
+	if (str_len == 4 && 
+		str[0] == 'n' && 
+		str[1] == 'u' && 
+		str[2] == 'l' && 
+		str[3] == 'l') {
+			return JTOKE_NULL;
+		}
+
+	if (str_len == 4 && 
+		str[0] == 't' && 
+		str[1] == 'r' && 
+		str[2] == 'u' && 
+		str[3] == 'e') {
+			return JTOKE_TRUE;
+		}
+
+	if (str_len == 5 && 
+		str[0] == 'f' && 
+		str[1] == 'a' && 
+		str[2] == 'l' && 
+		str[3] == 's' && 
+		str[4] == 'e') {
+			return JTOKE_FALSE;
+		}
+
+	for (i=0; i<str_len; i++) {
+		if (!in_charset("-0123456789", str[i])) {
+			break;
 		}
 	}
-	return 1;
+	if (i == str_len) return JTOKE_INT;
+
+	for (i=0; i<str_len; i++) {
+		if (!in_charset("-0123456789.eE+", str[i])) {
+			break;
+		}
+	}
+	if (i == str_len) return JTOKE_REAL;
+
+	return JTOKE_INVALID;
 }
 
 jtoke_type_t jtoke_parse(jtoke_context_t* ctx, const char* json, jtoke_item_t* item)
@@ -121,6 +153,8 @@ jtoke_type_t jtoke_parse(jtoke_context_t* ctx, const char* json, jtoke_item_t* i
 
 	if (0 == ctx->pos) {
 		ctx->pos = json;
+		// Allow (but don't enforce) an open brace, but only at the start of 
+		// the string.
 		ch = advance_past(JSON_WHITESPACE "{", &ctx->pos);
 		RETURN_IF_NULL(ch);
 	}
@@ -133,7 +167,7 @@ jtoke_type_t jtoke_parse(jtoke_context_t* ctx, const char* json, jtoke_item_t* i
 		return JTOKE_ERROR;
 	}
 
-	ctx->pos++;
+	ADV_AND_CHECK(ctx->pos);
 	item->name = ctx->pos;
 
 	DBG_PRINT("checking for close quote\n");
@@ -141,7 +175,7 @@ jtoke_type_t jtoke_parse(jtoke_context_t* ctx, const char* json, jtoke_item_t* i
 	RETURN_IF_NULL(ch);
 
 	item->name_len = ctx->pos - item->name;
-	ctx->pos++;
+	ADV_AND_CHECK(ctx->pos);
 	DBG_PRINT("name_len is %u, next char is '%c'\n", item->name_len, *ctx->pos);
 
 	DBG_PRINT("advancing past colon\n");
@@ -150,16 +184,16 @@ jtoke_type_t jtoke_parse(jtoke_context_t* ctx, const char* json, jtoke_item_t* i
 
 	if (ch == '"') {
 		type = JTOKE_STRING;
-		ctx->pos++;
+		ADV_AND_CHECK(ctx->pos);
 		item->val = ctx->pos;
-		DBG_PRINT("advancing until value end (string)\n");
+		DBG_PRINT("found string. advancing until end.\n");
 		ch = advance_until_end_quote(&ctx->pos);
 		RETURN_IF_NULL(ch);
 		item->val_len = ctx->pos - item->val;
 		// Move past the quote character itself
 		// Note we cannot use advance_past() here because it may chew up 
 		// the start of the next quote
-		ctx->pos++;
+		ADV_AND_CHECK(ctx->pos);
 		ch = advance_past(JSON_WHITESPACE ",", &ctx->pos);
 		DBG_PRINT("end of string char: %c (%c)\n", ch, *ctx->pos);
 	}
@@ -180,20 +214,9 @@ jtoke_type_t jtoke_parse(jtoke_context_t* ctx, const char* json, jtoke_item_t* i
 		RETURN_IF_NULL(ch);
 		item->val_len = ctx->pos - item->val;
 
-		if (item->val_len == strlen(JSON_NULL) && !memcmp(item->val, JSON_NULL, item->val_len)) {
-			type = JTOKE_NULL;
-		}
-		else if (item->val_len == strlen(JSON_TRUE) && !memcmp(item->val, JSON_TRUE, item->val_len)) {
-			type = JTOKE_TRUE;
-		}
-		else if (item->val_len == strlen(JSON_FALSE) && !memcmp(item->val, JSON_FALSE, item->val_len)) {
-			type = JTOKE_FALSE;
-		}
-		else if (is_integer(item->val, item->val_len)) {
-			type = JTOKE_INT;
-		}
-		else if (is_real(item->val, item->val_len)) {
-			type = JTOKE_REAL;
+		type = detect_type(item->val, item->val_len);
+		if (type > 0) {
+			// Found a valid type, proceed.
 		}
 		else {
 			// Unknown type?
@@ -202,7 +225,7 @@ jtoke_type_t jtoke_parse(jtoke_context_t* ctx, const char* json, jtoke_item_t* i
 		}
 
 		// Move to the char following the value
-		ctx->pos++;
+		ADV_AND_CHECK(ctx->pos);
 	}
 
 	DBG_PRINT("item complete.\n");
