@@ -45,8 +45,11 @@ typedef struct
 	// Fields represented as a json string
 	const char* json;
 	// List of fields for the test case
+	// Terminate with an entry where 'type == TEST_TERM'
 	const test_case_field_t* fields;
 } test_case_t;
+
+#define TEST_TERM	4242
 
 static const test_case_t cases[] = {
 	{
@@ -76,7 +79,7 @@ static const test_case_t cases[] = {
 			{ .type = JTOKE_STRING, .val = "extra \\\"escapes\\\"" },
 			{ .type = JTOKE_STRING, .val = "multi\nline\nstring" },
 			{ .type = JTOKE_STRING, .val = "string\twith\ttabs" },
-			{ .type = JTOKE_ERROR }, // end marker
+			{ .type = TEST_TERM }, // end marker
 		},
 	},
 
@@ -90,6 +93,37 @@ static const test_case_t cases[] = {
 	{ .json = "{ \"foo\" : fals3 }" },
 	{ .json = "{ \"foo\" : 3f }" },
 	{ .json = "{ \"foo\" : 3.f }" },
+
+	// Negative cases dealing with truncated or malformed json.
+	{ .json = "{ \"foo" },
+	{ .json = "{ \"foo\"" },
+	{ .json = "{ \"foo\" : " },
+	{ .json = "{ \"foo\" : \"b" },
+
+	// Incomplete/invalid json, but sufficient to handle.
+	{ 
+		.json = "{ \"foo\" : \"bar\"",
+		.fields = (test_case_field_t []) {
+			{ .type = JTOKE_STRING, .val = "bar" },
+			{ .type = TEST_TERM }, // end marker
+		},
+	},
+
+	{ 
+		.json = "{ \"foo\" : 123, \"",
+		.fields = (test_case_field_t []) {
+			{ .type = JTOKE_INT, .val = "123" },
+			{ .type = TEST_TERM }, // end marker
+		},
+	},
+
+	{ 
+		.json = "{ \"foo\" : 123, \"bar\" : ",
+		.fields = (test_case_field_t []) {
+			{ .type = JTOKE_INT, .val = "123" },
+			{ .type = TEST_TERM }, // end marker
+		},
+	},
 };
 
 const char* lookup_type(jtoke_type_t type)
@@ -124,7 +158,7 @@ const char* build_json_from_test(const test_case_field_t* fields)
 	memset(json, 0, sizeof(json));
 
 	strncat(json, "{", 1);
-	for (unsigned i=0; fields[i].type > 0; i++) {
+	for (unsigned i=0; fields[i].type != TEST_TERM; i++) {
 		snprintf(nameval, sizeof(nameval), 
 			(JTOKE_STRING == fields[i].type) ? 
 				// string types are quoted
@@ -142,8 +176,9 @@ const char* build_json_from_test(const test_case_field_t* fields)
 void runtest(const test_case_t* test_case)
 {
 	const test_case_field_t* fields = test_case->fields;
-
 	const char* json = test_case->json;
+
+	// Build the json if not already set
 	if (NULL == json) {
 		json = build_json_from_test(fields);
 	}
@@ -158,7 +193,7 @@ void runtest(const test_case_t* test_case)
 
 	if (fields) {
 		// Loop through the test fields. They should be reported in order.
-		for (unsigned i=0; fields[i].type > 0; i++) {
+		for (unsigned i=0; fields[i].type != TEST_TERM; i++) {
 			type = jtoke_parse(&ctx, json, &item);
 
 			if (type != fields[i].type) {
